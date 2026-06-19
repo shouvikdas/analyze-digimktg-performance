@@ -31,7 +31,7 @@ def load_cleaned(path: Path) -> pd.DataFrame:
     return df
 
 
-def compute_efficiency(df: pd.DataFrame, shipping_cost: float, product_cost_pct: float) -> pd.DataFrame:
+def compute_efficiency(df: pd.DataFrame, shipping_cost: float=0, product_cost_pct: float=0) -> pd.DataFrame:
     d = df.copy()
     d["_channel_key"] = d["channel"].astype(str).str.strip().str.lower().str.replace(" ", "_")
 
