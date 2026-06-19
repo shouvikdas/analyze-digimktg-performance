@@ -79,7 +79,8 @@ def summarize_top_channels(agg: pd.DataFrame, metric: str = "conversions", top_n
     latest_per_channel = agg.sort_values("week").groupby("channel").tail(1)
     return latest_per_channel.sort_values(metric, ascending=False).head(top_n)
 
-
+#This is a command-line interface (CLI) entry point using Python's built-in argparse module. 
+#It lets someone run your script from a terminal with flags, instead of editing the code or calling a function with hardcoded values.
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Analyze weekly marketing campaign performance by channel")
     parser.add_argument("--input", "-i", required=True, help="Input CSV file path")

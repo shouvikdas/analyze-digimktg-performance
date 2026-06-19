@@ -1,10 +1,10 @@
 from fastapi import FastAPI, HTTPException #Import FastAPI
 from pydantic import BaseModel #to create POST objects
-from fastapi import UploadFile #to handle file uploads in POST requests
+from fastapi import UploadFile, File, Form #to handle file uploads in POST requests
 from input_campaign_data import load_and_clean
 from efficiency_analysis import load_cleaned, compute_efficiency
 from funnel_analysis import compute_funnel
-from analyze_campaign import main
+from analyze_campaign import load_data, preprocess, compute_weekly_metrics, summarize_top_channels
 from pathlib import Path
 
 app = FastAPI() #Create an app instance of FastAPI. 
@@ -28,7 +28,7 @@ async def root(): #Define a path operation function
 async def get_cleaned_data_from_file(file_path: str):  # Query parameter from URL
     path = Path(file_path)
     #Two validations are added: 
-    #(1) File existence check — returns a 404 if the path doesn't point to a real file
+    #(1)File existence check — returns a 404 if the path doesn't point to a real file
     #(2)Extension check — returns a 400 if the file isn't a .csv
     # Both raise HTTPException which FastAPI automatically converts into proper JSON error responses
     if not path.exists():
@@ -93,7 +93,41 @@ async def funnel_analysis_from_upload_file(file: UploadFile):
 
 ############################################################################
 
+#how to convert the main() in analyze_campaign.py into a FastAPI server, step by step.
+
+#The key insight: argparse is for CLI input, FastAPI path/query parameters are for HTTP input. 
+#You're replacing "flags typed in a terminal" with "parameters passed in a URL or request body." 
+#The underlying logic (loading the CSV, computing metrics, ranking) stays the same — you're just changing how input arrives and how output is returned.
+
 @app.post("/analyze_campaign") 
-async def analyze_campaign(file: UploadFile):
-    main(argv: list[str] | None = None)
-    return {"message": "Hello Big World"}
+#Step 1: Separate logic from CLI/HTTP plumbing
+#The core idea: argparse and FastAPI are both just wrappers around the same business logic. 
+#Your actual functions (load_and_clean, compute_weekly_metrics, rank_channels) shouldn't change at all — only how arguments come in and how results go out changes.
+#Step 2: Map each argparse argument to a FastAPI parameter
+async def analyze_campaign(
+    file: UploadFile = File(..., description="Campaign data CSV file"),
+    output_file: str | None = Form("weekly_metrics.csv"),
+    top_k: int | None = Form(5),
+    arrange_by_metric: str | None = Form("conversions")
+    ):
+    
+    if file.content_type not in ("text/csv", "application/vnd.ms-excel") and not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    try:
+        df = load_data(file.file)  # file.file is a file-like object that can be passed directly to our existing loading/cleaning function
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Failed to load data: {exc}")
+
+    df = preprocess(df)
+    agg = compute_weekly_metrics(df)
+    agg.to_csv(output_file, index=False) 
+    top_channels = summarize_top_channels(agg, metric=arrange_by_metric, top_n=top_k)
+
+    display_cols = ["channel", "week", arrange_by_metric, "roas"]
+    available = [c for c in display_cols if c in top_channels.columns]
+
+    return {
+        "message": f"Saved weekly metrics to {output_file}",
+        "top_channels": top_channels[available].to_dict(orient="records"),
+    }
